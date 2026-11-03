@@ -33,7 +33,13 @@ if [ ! -r "$CF_TOKEN_FILE" ]; then
 fi
 CF_TOKEN="$(tr -d '\r\n' < "$CF_TOKEN_FILE")"
 
-UPSTREAM_TYPE="${UPSTREAM_TYPE:-raw}"      # raw | tarball
+# 未显式配置时按 URL 后缀推断，避免两处逻辑不一致
+if [ -z "${UPSTREAM_TYPE:-}" ]; then
+  case "$UPSTREAM_URL" in
+    *.tar.gz|*.tgz) UPSTREAM_TYPE=tarball ;;
+    *)              UPSTREAM_TYPE=raw ;;
+  esac
+fi
 MAIN_MODULE="${MAIN_MODULE:-main.js}"
 COMPAT_DATE="${COMPAT_DATE:-2025-01-01}"
 COMPAT_FLAGS="${COMPAT_FLAGS:-nodejs_compat}"
@@ -43,6 +49,10 @@ VERIFY_EXPECT="${VERIFY_EXPECT:-}"
 STATE_DIR="${STATE_DIR:-/var/lib/cfws/${WORKER}}"
 HASH_FILE="${STATE_DIR}/current.sha"
 MIN_BYTES="${MIN_BYTES:-2000}"
+
+to_json_array() {
+  printf '%s' "$1" | tr -d ' ' | awk -F',' '{out=""; for(i=1;i<=NF;i++){if($i!=""){out=out (out?",":"") "\"" $i "\""}} print "[" out "]"}'
+}
 
 log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "${WORKER}" "$*"; }
 
@@ -64,6 +74,12 @@ if [ "$SIZE" -lt "$MIN_BYTES" ]; then
   exit 1
 fi
 
+# 上游若返回 HTML 错误页/登录页，体积可能超过 MIN_BYTES，这里再挡一层
+if head -c 400 "$WORK/src" | grep -qiE '<!doctype html|<html'; then
+  log "上游返回的是 HTML 页面而不是代码，跳过"
+  exit 1
+fi
+
 NEW_HASH=$(sha256sum "$WORK/src" | awk '{print $1}')
 OLD_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo none)
 
@@ -81,7 +97,10 @@ MODULE_ARGS=()
 case "$UPSTREAM_TYPE" in
   raw)
     MODULE_DIR="$WORK/modules"
-    mkdir -p "$MODULE_DIR/$(dirname "$MAIN_MODULE")" 2>/dev/null || true
+    if ! mkdir -p "$MODULE_DIR/$(dirname "$MAIN_MODULE")"; then
+      log "创建模块目录失败: $MODULE_DIR"
+      exit 1
+    fi
     cp "$WORK/src" "$MODULE_DIR/$MAIN_MODULE"
     MODULE_ARGS+=(-F "${MAIN_MODULE}=@${MODULE_DIR}/${MAIN_MODULE};filename=${MAIN_MODULE};type=application/javascript+module")
     ;;
@@ -114,8 +133,8 @@ esac
 
 # ---------- 3. 构造 metadata ----------
 
-flags_json=$(printf '%s' "$COMPAT_FLAGS" | tr -d ' ' | awk -F',' '{out=""; for(i=1;i<=NF;i++){if($i!=""){out=out (out?",":"") "\"" $i "\""}} print "[" out "]"}')
-keep_json=$(printf '%s' "$KEEP_BINDINGS" | tr -d ' ' | awk -F',' '{out=""; for(i=1;i<=NF;i++){if($i!=""){out=out (out?",":"") "\"" $i "\""}} print "[" out "]"}')
+flags_json=$(to_json_array "$COMPAT_FLAGS")
+keep_json=$(to_json_array "$KEEP_BINDINGS")
 
 cat > "$WORK/meta.json" <<JSON
 {
@@ -126,7 +145,21 @@ cat > "$WORK/meta.json" <<JSON
 }
 JSON
 
-# ---------- 4. 上传 ----------
+# ---------- 4. 确认目标 Worker 存在 ----------
+# PUT 对不存在的名称会直接新建，拼错一个字母就会静默多出一个空 Worker，必须先查
+
+HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+  -H "Authorization: Bearer ${CF_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER}")
+
+case "$HTTP_CODE" in
+  200) : ;;
+  404) log "Worker「${WORKER}」不存在，拒绝创建（检查 WORKER 是否拼错）"; exit 2 ;;
+  401|403) log "认证失败（HTTP ${HTTP_CODE}），检查 token 权限"; exit 2 ;;
+  *)   log "查询 Worker 失败（HTTP ${HTTP_CODE}），跳过"; exit 1 ;;
+esac
+
+# ---------- 5. 上传 ----------
 
 RESP=$(curl -sS --max-time 120 -X PUT \
   "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER}" \
@@ -141,7 +174,7 @@ fi
 
 log "已上传，开始健康检查"
 
-# ---------- 5. 验证 ----------
+# ---------- 6. 验证 ----------
 
 if [ -n "$VERIFY_URL" ]; then
   ok=0
@@ -162,7 +195,7 @@ else
   log "未配置 VERIFY_URL，跳过健康检查"
 fi
 
-# ---------- 6. 记录版本 ----------
+# ---------- 7. 记录版本 ----------
 
 printf '%s\n' "$NEW_HASH" > "$HASH_FILE"
 log "完成 (${NEW_HASH:0:12})"

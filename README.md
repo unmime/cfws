@@ -84,7 +84,7 @@ sudo ./install.sh
 |---|---|
 | `WORKER` | Cloudflare 上的脚本名 |
 | `UPSTREAM_URL` | 上游直链（`.js` 或 `.tar.gz`） |
-| `UPSTREAM_TYPE` | `raw` 单文件 / `tarball` 压缩包 |
+| `UPSTREAM_TYPE` | 可省略，默认按 URL 后缀推断；`raw` 单文件 / `tarball` 压缩包 |
 | `MAIN_MODULE` | 入口模块名，必须与压缩包内相对路径一致 |
 | `COMPAT_DATE` / `COMPAT_FLAGS` | Worker 兼容设置，**照抄线上值** |
 | `KEEP_BINDINGS` | 保留的绑定类型，默认全保留 |
@@ -109,7 +109,17 @@ sudo ./install.sh
 
 所以脚本对"这个 Worker 具体绑了什么"一无所知，天然通用。
 
-**② 比文件哈希，不比版本号**
+**② 上传前先确认 Worker 存在**
+
+`PUT /workers/scripts/{name}` 对不存在的名字会**直接新建**。所以脚本会先 `GET` 一次，404 就拒绝并退出。
+不这么做的话，Worker 名拼错一个字母的后果是：静默多出一个空 Worker，原 Worker 没动，而你收到"部署成功"。
+
+**③ 阻止把网页当成代码**
+
+两道闸：内容小于 `MIN_BYTES` 跳过；开头出现 `<!doctype html` / `<html` 跳过。
+上游 404 返回一个错误页时，避免它被当成脚本传上去。
+
+**④ 比文件哈希，不比版本号**
 
 很多项目里的 `version = '1.2.3'` 是硬编码的，作者改代码时常忘记改。比内容哈希才可靠。
 
@@ -153,7 +163,7 @@ tail -f /var/log/cfws-<worker>.log
 |---|---|
 | 0 | 成功，或无需更新 |
 | 1 | 拉取失败 / 内容异常 / 部署失败 / 健康检查失败 |
-| 2 | 配置或凭据文件有问题 |
+| 2 | 配置 / 凭据有问题，或目标 Worker 不存在（拒绝自动创建） |
 
 ---
 
