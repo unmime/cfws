@@ -1,0 +1,35 @@
+# cfws 配置示例
+# 复制一份到 /etc/cfws/<worker>.conf 并修改（权限建议 600）
+
+# 目标 Worker 名称（Cloudflare 上的脚本名）
+WORKER=bark
+ACCOUNT_ID=0000000000000000000000000000000
+
+# 只含一行 API Token 的文件，权限 600
+CF_TOKEN_FILE=/etc/cfws/cf.token
+
+# 上游来源
+#   raw     → 单个 JS 文件的直链
+#   tarball → .tar.gz 压缩包（多文件 Worker 用这个）
+UPSTREAM_TYPE=raw
+UPSTREAM_URL=https://raw.githubusercontent.com/cwxiaos/bark-worker/master/main.js
+
+# 入口模块名（必须与压缩包内的相对路径一致）
+MAIN_MODULE=main.js
+
+# Worker 的兼容设置。改这里会覆盖线上的设置，不确定就照抄线上 Worker 的值
+COMPAT_DATE=2026-03-01
+COMPAT_FLAGS=nodejs_compat
+
+# 保留 Worker 现有绑定（D1 / KV / 变量 / secret），无需手写绑定清单
+KEEP_BINDINGS=d1,plain_text,kv_namespace,secret_text
+
+# 健康检查：部署后如果请求不到预期内容，就认为失败，不记录版本，下次重试
+VERIFY_URL=https://bark.unmi.me/ping
+VERIFY_EXPECT=pong
+
+# 状态目录（记录上次部署的哈希）
+STATE_DIR=/var/lib/cfws/bark
+
+# 上游内容小于该字节数视为异常（防止把 404 页面当代码传上去）
+MIN_BYTES=2000

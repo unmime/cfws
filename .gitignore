@@ -1,0 +1,10 @@
+# 凭据与本机状态，永不提交
+*.token
+cf.token
+*.conf
+!cfws.conf.example
+.env
+.env.*
+current.sha
+*.log
+.DS_Store
