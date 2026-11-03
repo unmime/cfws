@@ -8,7 +8,7 @@ STATE_DIR=/var/lib/cfws/my-worker
 
 # 健康检查：部署后请求不到预期内容就算失败，不记录版本，下次重试
 VERIFY_URL=https://my-worker.example.com/ping
-VERIFY_EXPECT=pong
+VERIFY_EXPECT=pong          # 含空格要加引号，如 "Cloud Mail"
 
 # 目标 Worker 不存在时是否允许创建。默认 false（防止名字拼错静默新建）
 # ALLOW_CREATE=false

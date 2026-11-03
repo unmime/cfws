@@ -121,12 +121,18 @@ https://dash.cloudflare.com/profile/api-tokens → Create Custom Token：
 | `WRANGLER_CONFIG` | 配置文件路径，省略则用目录下的默认配置 |
 | `WRANGLER_BIN` | 默认 `npx --yes wrangler@4`，可指向本地已装的 wrangler |
 
-`BUILD_CMD` 写法示例（引号不能省，否则配置会被拆成两条命令）：
+### 配置文件是 shell 脚本，含空格的值必须加引号
+
+conf 文件会被 `source` 执行，所以任何**含空格**的值都要整体加引号，否则会被拆成命令：
 
 ```bash
+VERIFY_EXPECT="Cloud Mail"          # ❌ 不写引号会执行一个叫 Mail 的命令
 BUILD_CMD="pnpm install && pnpm build"
 BUILD_CMD="opennextjs-cloudflare build"
 ```
+
+不写引号的症状：日志里出现 `行 12: Mail: 未找到命令`，而变量只拿到第一个词
+（`VERIFY_EXPECT` 变成 `Cloud`），健康检查看似通过其实校验的是残缺字符串。
 
 ---
 
