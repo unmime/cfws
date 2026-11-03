@@ -1,35 +1,40 @@
 # cfws 配置示例
-# 复制一份到 /etc/cfws/<worker>.conf 并修改（权限建议 600）
+# 复制到 /etc/cfws/<worker>.conf，权限 600
 
-# 目标 Worker 名称（Cloudflare 上的脚本名）
-WORKER=bark
+WORKER=my-worker
 ACCOUNT_ID=0000000000000000000000000000000
-
-# 只含一行 API Token 的文件，权限 600
 CF_TOKEN_FILE=/etc/cfws/cf.token
+STATE_DIR=/var/lib/cfws/my-worker
 
-# 上游来源
-#   raw     → 单个 JS 文件的直链
-#   tarball → .tar.gz 压缩包（多文件 Worker 用这个）
-UPSTREAM_TYPE=raw
-UPSTREAM_URL=https://raw.githubusercontent.com/cwxiaos/bark-worker/master/main.js
-
-# 入口模块名（必须与压缩包内的相对路径一致）
-MAIN_MODULE=main.js
-
-# Worker 的兼容设置。改这里会覆盖线上的设置，不确定就照抄线上 Worker 的值
-COMPAT_DATE=2026-03-01
-COMPAT_FLAGS=nodejs_compat
-
-# 保留 Worker 现有绑定（D1 / KV / 变量 / secret），无需手写绑定清单
-KEEP_BINDINGS=d1,plain_text,kv_namespace,secret_text
-
-# 健康检查：部署后如果请求不到预期内容，就认为失败，不记录版本，下次重试
-VERIFY_URL=https://bark.unmi.me/ping
+# 健康检查：部署后请求不到预期内容就算失败，不记录版本，下次重试
+VERIFY_URL=https://my-worker.example.com/ping
 VERIFY_EXPECT=pong
 
-# 状态目录（记录上次部署的哈希）
-STATE_DIR=/var/lib/cfws/bark
+# 目标 Worker 不存在时是否允许创建。默认 false（防止名字拼错静默新建）
+# ALLOW_CREATE=false
 
-# 上游内容小于该字节数视为异常（防止把 404 页面当代码传上去）
+
+# ============================================================
+# 用法 A：direct —— 纯 JS，无构建、无静态资源（零依赖）
+# 不配 MODE，只保留下面这段即自动走 direct
+# ============================================================
+UPSTREAM_URL=https://raw.githubusercontent.com/someone/some-worker/master/main.js
+MAIN_MODULE=main.js
+COMPAT_DATE=2026-03-01
+COMPAT_FLAGS=nodejs_compat
+KEEP_BINDINGS=d1,plain_text,kv_namespace,secret_text
 MIN_BYTES=2000
+
+
+# ============================================================
+# 用法 B：wrangler —— 带静态资源或需要构建（依赖 node + git）
+# 用这段时，把上面 A 段的 UPSTREAM_URL / MAIN_MODULE / COMPAT_* 删掉
+# ============================================================
+# MODE=wrangler
+# SRC_GIT=https://github.com/you/your-project.git
+# SRC_REF=main
+# 或本地目录（与 SRC_GIT 二选一）：
+# SRC_DIR=/opt/sites/your-project
+# 构建命令：含空格必须整体加引号
+# BUILD_CMD="pnpm install && pnpm build"
+# WRANGLER_CONFIG=wrangler.jsonc
